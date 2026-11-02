@@ -1,0 +1,32 @@
+{
+  "config": {
+    "$schema": "https://raw.githubusercontent.com/DavidAnson/markdownlint/main/schema/markdownlint-config-schema.json",
+    "extends": "markdownlint/style/prettier",
+    "default": true,
+    // Not "MD013": the prettier style turns the rule off by its alias,
+    // "line-length", and the alias wins over an "MD013" key.
+    "line-length": {
+      "line_length": 80,
+      "code_blocks": false,
+      "tables": false,
+      "headings": false,
+      "stern": true
+    },
+    // Keep a Changelog repeats "### Added" under each version; still no
+    // duplicates within one.
+    "MD024": { "siblings_only": true },
+    "MD060": false
+  },
+  "ignores": [
+    "**/node_modules/**",
+    "**/target/**",
+    "**/.build/**",
+    // GitHub's issue and pull request templates, not documentation.
+    ".github/**",
+    // Gitignored clones of the public repo and the reference library.
+    "public/**",
+    "upstream/**",
+    // The vendored write-good style for Vale.
+    ".vale/**"
+  ]
+}

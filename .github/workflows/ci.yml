@@ -1,0 +1,136 @@
+# Lint, test on Linux, macOS and Windows, and hold coverage at 100%.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Lint
+    if: github.repository == 'bluefielddigital/youtube-transcript-api-rs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # rustup installs the toolchain pinned in rust-toolchain.toml.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      # The hooks a local commit runs (.pre-commit-config.yaml): rustfmt,
+      # clippy with all and with no features, rustdoc, cargo-deny,
+      # markdownlint, gitleaks and the file hygiene checks.
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files --show-diff-on-failure
+
+  test:
+    name: Test (${{ matrix.os }})
+    if: github.repository == 'bluefielddigital/youtube-transcript-api-rs'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --workspace --all-features
+      - run: cargo build --locked --workspace --no-default-features
+
+  msrv:
+    # The oldest Rust we support: the version in Cargo.toml `rust-version`,
+    # not the toolchain pinned for development.
+    name: MSRV
+    if: github.repository == 'bluefielddigital/youtube-transcript-api-rs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - id: msrv
+        run: echo "version=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - run: rustup toolchain install ${{ steps.msrv.outputs.version }} --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +${{ steps.msrv.outputs.version }} test --locked --workspace --all-features
+      - run: cargo +${{ steps.msrv.outputs.version }} build --locked --workspace --no-default-features
+
+  semver:
+    # A change that breaks the library's API needs a new minor version (0.x)
+    # or major version: compared with the latest release on crates.io. The CLI
+    # has no API to check.
+    name: Semver
+    if: github.repository == 'bluefielddigital/youtube-transcript-api-rs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CRATES_IO_AGENT: youtube-transcript-api-rs CI (https://github.com/bluefielddigital/youtube-transcript-api-rs)
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      - name: Compare with crates.io
+        run: |
+          if curl -sf -A "$CRATES_IO_AGENT" https://crates.io/api/v1/crates/youtube-transcript-api > /dev/null; then
+            cargo semver-checks -p youtube-transcript-api --all-features
+          else
+            echo "::notice::youtube-transcript-api isn't on crates.io yet: nothing to compare with."
+          fi
+
+  coverage:
+    name: Coverage
+    if: github.repository == 'bluefielddigital/youtube-transcript-api-rs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # Every line, function and region of each crate is covered by that
+      # crate's own tests.
+      - run: scripts/coverage.sh
+      # Combined lcov for Codecov (the badge below). Kept separate from the
+      # per-crate 100% gate above so that enforcement is untouched. Upload is
+      # best-effort: a Codecov hiccup must not fail CI.
+      - name: Export coverage (lcov)
+        run: cargo llvm-cov --workspace --all-features --locked --lcov --output-path lcov.info
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false

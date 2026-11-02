@@ -1,0 +1,83 @@
+# The workspace: the `youtube-transcript-api` library and the
+# `youtube-transcript-api-cli` command line that depends on it. Both crates
+# share one version, so a release publishes both at the same number.
+[workspace]
+resolver = "3"
+members = ["crates/youtube-transcript-api", "crates/youtube-transcript-api-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+authors = ["Bluefield Digital"]
+repository = "https://github.com/bluefielddigital/youtube-transcript-api-rs"
+
+[workspace.dependencies]
+# The library, for the CLI. Its `version` must equal
+# `workspace.package.version`: crates.io needs the requirement, and CI checks
+# that the two agree.
+youtube-transcript-api = { path = "crates/youtube-transcript-api", version = "=0.1.0" }
+clap = "4.6.7"
+serde_json = "1.0.154"
+tokio = "1.54.1"
+
+# ============================================================================
+# Lints: clippy's pedantic, nursery and cargo groups, plus the restrictions below
+# ============================================================================
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+rust_2018_idioms = { level = "warn", priority = -1 }
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+unused_lifetimes = "warn"
+unused_qualifications = "warn"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# All standard lint groups
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# Transitive duplicates can't be controlled from here
+multiple_crate_versions = "allow"
+
+# Deny dangerous patterns
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+panic = "deny"
+unwrap_used = "warn"
+expect_used = "warn"
+missing_docs_in_private_items = "warn"
+
+# Strict lints from restriction (cherry-picked)
+shadow_reuse = "warn"
+shadow_same = "warn"
+shadow_unrelated = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+mem_forget = "warn"
+multiple_inherent_impl = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+try_err = "warn"
+clone_on_ref_ptr = "warn"
+filetype_is_file = "warn"
+format_push_string = "warn"
+string_slice = "warn"
+verbose_file_reads = "warn"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

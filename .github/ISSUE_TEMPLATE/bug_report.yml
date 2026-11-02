@@ -1,0 +1,23 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: The command or code you ran, and the full error message.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Video ID
+      description: The video it happened with, if any.
+  - type: input
+    attributes:
+      label: Version
+      description: The output of `youtube_transcript_api --version`, or the version in your Cargo.lock.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Operating system

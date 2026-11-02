@@ -1,0 +1,134 @@
+# Pre-commit hooks: the same checks as CI, run with the toolchain in
+# rust-toolchain.toml.
+# Install: pip install pre-commit && pre-commit install
+# Run manually: pre-commit run --all-files
+#
+# Needs: the toolchain from rust-toolchain.toml (rustup installs it on first
+# use), cargo-deny (`cargo install --locked cargo-deny`) and Node for npx.
+
+default_language_version:
+  python: python3
+
+# Recorded YouTube responses and Python output are compared byte for byte;
+# whitespace fixers must not touch them.
+exclude: ^crates/[^/]+/tests/(fixtures|golden)/
+
+repos:
+  # ===========================================================================
+  # Rust
+  # ===========================================================================
+  - repo: local
+    hooks:
+      - id: rustfmt
+        name: Rust Format
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: clippy
+        name: Rust Clippy (strict)
+        entry: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # Without the library's `tracing` feature, as most users build it.
+      - id: clippy-no-default-features
+        name: Rust Clippy (no default features)
+        entry: cargo clippy --locked --workspace --all-targets --no-default-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: rustdoc
+        name: Rust Docs (warnings are errors)
+        entry: env RUSTDOCFLAGS=-Dwarnings cargo doc --locked --workspace --no-deps --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      # Git exports GIT_INDEX_FILE (and in a worktree GIT_DIR) to hooks, and
+      # cargo deny's advisory-db fetch writes its own index there, wiping
+      # what the commit staged. Run it without them.
+      - id: cargo-deny
+        name: Cargo Deny (security + licenses + bans)
+        entry: env -u GIT_INDEX_FILE -u GIT_DIR -u GIT_WORK_TREE cargo deny check
+        language: system
+        files: (Cargo\.toml|Cargo\.lock|deny\.toml)$
+        pass_filenames: false
+
+  # ===========================================================================
+  # Markdown (npx, no Docker)
+  # ===========================================================================
+  - repo: local
+    hooks:
+      - id: markdownlint
+        name: Lint Markdown
+        entry: npx --yes markdownlint-cli2@0.23.3
+        language: system
+        types: [markdown]
+
+  # ===========================================================================
+  # Prose: the docs and the comments in the Rust code (.vale.ini)
+  # ===========================================================================
+  - repo: local
+    hooks:
+      - id: vale
+        name: Lint prose
+        entry: python scripts/vale.py
+        language: python
+        additional_dependencies: [vale==3.22.0.0]
+        types_or: [markdown, rust]
+        exclude: ^\.vale/
+        # One run: the vale package downloads its binary on first use.
+        require_serial: true
+
+  # ===========================================================================
+  # Leak check: no term from .leakcheck-terms in a published file
+  # ===========================================================================
+  - repo: local
+    hooks:
+      - id: leak-check
+        name: Public tree check
+        entry: scripts/leak-check.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+  # ===========================================================================
+  # File length: split a file before it passes 800 lines
+  # ===========================================================================
+  - repo: local
+    hooks:
+      - id: max-lines
+        name: File length
+        entry: python scripts/max-lines.py --max 800
+        language: python
+        types_or: [rust, python, shell, markdown, yaml, toml]
+        # Generated.
+        exclude: ^Cargo\.lock$
+
+  # ===========================================================================
+  # Secrets
+  # ===========================================================================
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  # ===========================================================================
+  # General hygiene
+  # ===========================================================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]

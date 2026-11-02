@@ -1,0 +1,318 @@
+# Merging a version bump releases it. A push to main whose Cargo.toml
+# version has no `v` tag yet, and whose CHANGELOG.md section for it is dated
+# (`## [X.Y.Z] - YYYY-MM-DD`), builds the CLI crate for Linux (x86_64, ARM64),
+# macOS (ARM64, x86_64) and Windows (x86_64), tests the workspace where it
+# runs, signs and notarizes the macOS binaries with Apple, publishes both
+# crates to crates.io (the library first, then the CLI that depends on it),
+# and creates the `vX.Y.Z` tag and GitHub release on the merge commit, with the archives, their SHA-256 sums, and the
+# CHANGELOG.md section as notes. A version with a `-` (`0.2.0-rc.1`) is a
+# prerelease. Every other push to main releases nothing.
+#
+# Rerunning is safe: a crate is skipped once crates.io has its version, and
+# the GitHub release is updated in place.
+#
+# crates.io: trusted publishing (OIDC) from the `release` environment, set up
+# for each crate. The very first publish of a crate can't use it, so a
+# `CARGO_REGISTRY_TOKEN` secret in that environment is used instead when it
+# is set.
+#
+# macOS signing: a Developer ID Application certificate and an App Store
+# Connect API key, as `release` environment secrets (see the notarize job).
+#
+# A pull request that changes this workflow or the notes script runs the
+# builds and `cargo publish --workspace --dry-run`, without publishing.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/release-notes.sh
+      - scripts/notarize-macos.sh
+      - scripts/publish-crate.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN: youtube-transcript-api
+  # crates.io asks API clients to identify themselves.
+  CRATES_IO_AGENT: youtube-transcript-api-rs release workflow (https://github.com/bluefielddigital/youtube-transcript-api-rs)
+
+jobs:
+  prepare:
+    name: Check version
+    if: github.repository == 'bluefielddigital/youtube-transcript-api-rs'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Is this version unreleased and dated?
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          required=$(sed -n 's/^youtube-transcript-api = {.*version = "=\([^"]*\)".*$/\1/p' Cargo.toml)
+          if [ "$required" != "$version" ]; then
+            echo "::error::the CLI requires youtube-transcript-api =$required, but the workspace version is $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          release=false
+          if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            if git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+              echo "v$version is already released."
+            elif grep -Eq "^## \[${version//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+              scripts/release-notes.sh "$version" > /dev/null
+              release=true
+              echo "Releasing v$version."
+            else
+              echo "::notice::v$version is not tagged, but its CHANGELOG.md section has no date, so it isn't released."
+            fi
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
+      - run: rustup toolchain install
+        if: github.event_name == 'pull_request'
+      # Both crates, the CLI checked against the library it would follow.
+      - name: cargo publish --workspace --dry-run
+        if: github.event_name == 'pull_request'
+        run: cargo publish --workspace --dry-run --locked
+
+  build:
+    name: Build (${{ matrix.name }})
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true' || github.event_name == 'pull_request'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            test: true
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            test: true
+          - name: macos-arm64
+            runner: macos-latest
+            target: aarch64-apple-darwin
+            test: true
+          # Cross-built on the Apple Silicon runner, so not tested.
+          - name: macos-x86_64
+            runner: macos-latest
+            target: x86_64-apple-darwin
+            test: false
+          - name: windows-x86_64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            test: true
+    env:
+      ARCHIVE: youtube-transcript-api-${{ needs.prepare.outputs.version }}-${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Test
+        if: matrix.test
+        run: cargo test --locked --workspace --all-features
+
+      - name: Build
+        run: cargo build --release --locked -p youtube-transcript-api-cli --target ${{ matrix.target }}
+
+      - name: Package (tar.gz)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "dist/$ARCHIVE"
+          cp "target/${{ matrix.target }}/release/$BIN" README.md LICENSE CHANGELOG.md "dist/$ARCHIVE/"
+          tar -C dist -czf "dist/$ARCHIVE.tar.gz" "$ARCHIVE"
+          ls -l dist
+
+      # A dry run of the notarize job's script: sign ad hoc, don't notarize.
+      - name: Sign ad hoc (dry run)
+        if: runner.os == 'macOS' && github.event_name == 'pull_request'
+        run: IDENTITY=- NOTARIZE=0 scripts/notarize-macos.sh "dist/$ARCHIVE.tar.gz"
+
+      - name: Package (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "dist/$env:ARCHIVE" | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/$env:BIN.exe", README.md, LICENSE, CHANGELOG.md "dist/$env:ARCHIVE/"
+          Compress-Archive -Path "dist/$env:ARCHIVE" -DestinationPath "dist/$env:ARCHIVE.zip"
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
+  notarize:
+    name: Sign and notarize (macOS)
+    needs: [prepare, build]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: macos-latest
+    environment: release
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        name: [macos-arm64, macos-x86_64]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.name }}
+          path: dist
+
+      # A throwaway keychain holding only the Developer ID certificate.
+      - name: Import the Developer ID certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERTIFICATE_P12" ]; then
+            echo "::error::The release environment has no MACOS_CERTIFICATE_P12 secret."
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password=$(openssl rand -base64 24)
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          identity=$(security find-identity -v -p codesigning "$keychain" \
+            | awk -F'"' '/Developer ID Application/ { print $2; exit }')
+          if [ -z "$identity" ]; then
+            echo "::error::MACOS_CERTIFICATE_P12 has no Developer ID Application identity."
+            exit 1
+          fi
+          echo "IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Sign and notarize
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          export APPLE_API_KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          printf '%s' "$APPLE_API_KEY_P8" | base64 --decode > "$APPLE_API_KEY_PATH"
+          scripts/notarize-macos.sh dist/*.tar.gz
+
+      # Replaces the build's unsigned archive.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.name }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          overwrite: true
+
+      - name: Remove the keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+  crates-io:
+    name: Publish to crates.io
+    needs: [prepare, build, notarize]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      HAS_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+
+      - name: Trusted publishing token
+        id: auth
+        if: env.HAS_TOKEN != 'true'
+        uses: rust-lang/crates-io-auth-action@v1
+
+      # In dependency order: the CLI requires this exact version of the
+      # library, so crates.io must have the library first. Each script run
+      # skips a crate that crates.io already has.
+      - name: Publish the library
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+        run: scripts/publish-crate.sh youtube-transcript-api "$VERSION"
+
+      - name: Publish the CLI
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
+        run: scripts/publish-crate.sh youtube-transcript-api-cli "$VERSION"
+
+  github-release:
+    name: Publish GitHub release
+    needs: [prepare, build, notarize, crates-io]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: v${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * | tee SHA256SUMS
+
+      - name: Release notes
+        run: scripts/release-notes.sh "$VERSION" | tee "$RUNNER_TEMP/notes.md"
+
+      # Creates the tag on the commit this run built.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=()
+          [[ "$TAG" == *-* ]] && flags+=(--prerelease)
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --target "$GITHUB_SHA" --title "$TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md" "${flags[@]}"
+          fi

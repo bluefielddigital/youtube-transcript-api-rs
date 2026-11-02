@@ -1,0 +1,23 @@
+# Security advisories for the dependencies, every Monday.
+
+name: Audit
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: Advisories
+    if: github.repository == 'bluefielddigital/youtube-transcript-api-rs'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: cargo deny check advisories

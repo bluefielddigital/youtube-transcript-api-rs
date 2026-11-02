@@ -1,0 +1,33 @@
+[package]
+name = "youtube-transcript-api-cli"
+description = "Command-line tool that fetches YouTube transcripts and subtitles, including auto-generated ones, without an API key or a headless browser"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["youtube", "transcript", "subtitles", "captions", "cli"]
+categories = ["command-line-utilities", "multimedia"]
+# What the crates.io package ships. CHANGELOG.md and LICENSE are links to the
+# repository's files.
+include = ["/src", "/README.md", "/CHANGELOG.md", "/LICENSE"]
+
+# The installed program keeps the library's name.
+[[bin]]
+name = "youtube-transcript-api"
+path = "src/main.rs"
+# Its documentation would share a directory with the library's.
+doc = false
+
+[dependencies]
+youtube-transcript-api.workspace = true
+clap = { workspace = true, features = ["derive"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

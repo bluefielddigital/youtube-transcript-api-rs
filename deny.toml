@@ -1,0 +1,69 @@
+# cargo-deny configuration
+# Install: cargo install cargo-deny
+# Run: cargo deny check
+
+[graph]
+# Every platform a release ships for (see .github/workflows/release.yml).
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
+# ============================================================================
+# Advisories - Security vulnerability checking
+# ============================================================================
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+unmaintained = "all"
+yanked = "deny"
+ignore = []
+
+# ============================================================================
+# Licenses - Allowed/denied licenses
+# ============================================================================
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+name = "ring"
+expression = "ISC AND MIT"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+# ============================================================================
+# Bans - Crate bans and duplicate detection
+# ============================================================================
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+
+deny = [
+    # Use rustls instead of openssl where possible
+    # { name = "openssl" },
+]
+
+skip = []
+skip-tree = []
+
+# ============================================================================
+# Sources - Where crates can come from
+# ============================================================================
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

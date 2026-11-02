@@ -1,0 +1,14 @@
+/target
+/coverage
+*.profraw
+lcov.info
+
+# Release archives packaged locally, as release.yml does.
+/dist/
+
+# Python bytecode from scripts/record_golden.py
+__pycache__/
+
+# Clones kept beside the code: the public repository and the reference library.
+/public/
+/upstream/

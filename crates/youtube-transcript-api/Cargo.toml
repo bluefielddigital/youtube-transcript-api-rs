@@ -1,0 +1,61 @@
+[package]
+name = "youtube-transcript-api"
+description = "Fetch YouTube transcripts and subtitles, including auto-generated ones, without an API key or a headless browser"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["youtube", "transcript", "subtitles", "captions"]
+categories = ["api-bindings", "multimedia"]
+# What the crates.io package ships: the library and the examples. Tests,
+# fixtures, CI and repository tooling stay in the repository. CHANGELOG.md and
+# LICENSE are links to the repository's files.
+include = ["/src", "/examples", "/README.md", "/CHANGELOG.md", "/LICENSE"]
+
+# docs.rs builds with every feature, with `docsrs` set for the `cfg` hooks.
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+## `tracing` events: each request, retries, and YouTube's consent page.
+tracing = ["dep:tracing"]
+
+[dependencies]
+backon = { version = "1.6.0", default-features = false, features = ["tokio-sleep"] }
+htmlize = { version = "1.1.0", features = ["unescape"] }
+http = "1.5.0"
+httpdate = "1.0.3"
+indexmap = "2.14.2"
+lazy-regex = "3.6.2"
+num-traits = { version = "0.2.19", default-features = false, features = ["std"] }
+percent-encoding = "2.3.2"
+reqwest = { version = "0.13.5", default-features = false, features = ["cookies", "socks"] }
+roxmltree = "0.21.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json.workspace = true
+thiserror = "2.0.21"
+tokio = { workspace = true, features = ["time"] }
+tracing = { version = "0.1.44", default-features = false, features = ["std"], optional = true }
+
+# TLS: rustls everywhere except Windows, which uses its own TLS (SChannel)
+# through native-tls. rustls's aws-lc needs a C compiler and CMake, which
+# the Windows runner doesn't have; SChannel needs neither and uses the
+# Windows certificate store.
+[target.'cfg(not(windows))'.dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls"] }
+
+[target.'cfg(windows)'.dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["native-tls"] }
+
+[dev-dependencies]
+proptest = "1.12.0"
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util", "time"] }
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+wiremock = "0.6.5"
+
+[lints]
+workspace = true

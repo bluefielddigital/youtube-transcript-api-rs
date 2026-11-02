@@ -1,0 +1,3 @@
+# LF everywhere, Windows checkouts included: the golden files are compared
+# byte for byte, and CRLF would break every one of them on Windows.
+* text=auto eol=lf

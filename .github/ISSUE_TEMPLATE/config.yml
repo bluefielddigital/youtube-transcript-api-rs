@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Troubleshooting guide
+    url: https://github.com/bluefielddigital/youtube-transcript-api-rs/blob/main/TROUBLESHOOTING.md
+    about: Blocked requests, missing languages and other common problems.
+  - name: Report a security problem
+    url: https://github.com/bluefielddigital/youtube-transcript-api-rs/security/advisories/new
+    about: Privately, please, not as an issue.

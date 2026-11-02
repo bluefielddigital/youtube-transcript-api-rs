@@ -1,0 +1,25 @@
+1
+00:00:00,000 --> 00:00:01,540
+Hey, this is just a test
+
+2
+00:00:01,540 --> 00:00:05,700
+this is not the original transcript
+
+3
+00:00:05,700 --> 00:00:08,939
+just something shorter, I made up for testing
+
+
+
+1
+00:00:00,000 --> 00:00:02,500
+first
+
+2
+00:00:02,500 --> 00:00:03,750
+overlaps
+
+3
+01:02:05,500 --> 01:02:07,500
+later

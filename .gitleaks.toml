@@ -1,0 +1,8 @@
+# Gitleaks config: the default rules, plus one path allowlist.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public YouTube responses recorded from YouTube for the tests (InnerTube keys, tracking tokens), not secrets"
+paths = ['''^crates/youtube-transcript-api/tests/fixtures/[^/]+\.static$''']

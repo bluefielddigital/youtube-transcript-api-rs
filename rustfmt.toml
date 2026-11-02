@@ -1,0 +1,21 @@
+# Strict rustfmt configuration
+edition = "2024"
+style_edition = "2024"
+
+# Formatting strictness
+max_width = 100
+tab_spaces = 4
+hard_tabs = false
+newline_style = "Unix"
+
+# Imports
+reorder_imports = true
+reorder_modules = true
+
+# Functions & structs
+fn_params_layout = "Tall"
+
+# Other strictness
+use_field_init_shorthand = true
+use_try_shorthand = true
+force_explicit_abi = true

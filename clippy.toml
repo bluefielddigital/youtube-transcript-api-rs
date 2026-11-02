@@ -1,0 +1,37 @@
+# Strictest clippy configuration
+msrv = "1.88"
+
+# Cognitive complexity threshold (lower = stricter)
+cognitive-complexity-threshold = 10
+
+# Too many arguments threshold
+too-many-arguments-threshold = 5
+
+# Too many lines in function
+too-many-lines-threshold = 50
+
+# Type complexity threshold
+type-complexity-threshold = 150
+
+# Trivial copy size limit
+trivial-copy-size-limit = 8
+
+# Struct field count threshold
+max-struct-bools = 3
+
+# Enum variant size difference threshold
+enum-variant-size-threshold = 200
+
+# Doc markdown settings
+doc-valid-idents = ["YouTube", "InnerTube", "WebVTT", "Webshare", "OAuth", "JWT", "API", "URL", "JSON", "HTTP", "HTTPS", "XML", "HTML", "SRT"]
+
+# Disallowed methods (encourage better alternatives)
+disallowed-methods = [
+    { path = "std::env::var", reason = "Use std::env::var_os for robustness" },
+]
+
+# Disallowed types
+disallowed-types = []
+
+# Allow certain patterns
+allow-unwrap-in-tests = true
